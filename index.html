@@ -1,0 +1,751 @@
+<!doctype html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SDGsクイズゲーム</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            box-sizing: border-box;
+            font-family: 'Noto Sans JP', sans-serif;
+        }
+        .sdg-button {
+            transition: all 0.2s ease;
+        }
+        .sdg-button:hover {
+            transform: scale(1.05);
+        }
+        .correct-answer {
+            border: 4px solid #10b981 !important;
+            box-shadow: 0 0 0 2px #10b981 !important;
+        }
+        .wrong-answer {
+            background-color: #ef4444 !important;
+            color: white !important;
+        }
+        .pulse {
+            animation: pulse 0.5s ease-in-out;
+        }
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+            100% { transform: scale(1); }
+        }
+        .volume-control {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: white;
+            padding: 10px 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .volume-slider {
+            width: 100px;
+        }
+    </style>
+</head>
+<body class="min-h-full bg-gradient-to-br from-blue-50 to-green-50">
+    <div class="container mx-auto px-4 py-6 max-w-6xl">
+        <!-- 音量調整 -->
+        <div class="flex justify-end mb-4">
+            <div class="volume-control">
+                <span class="text-gray-700">🔊</span>
+                <input type="range" id="volumeSlider" class="volume-slider" min="0" max="100" value="50">
+                <span id="volumeValue" class="text-gray-700 font-semibold">50%</span>
+            </div>
+        </div>
+
+        <!-- ゲーム開始画面 -->
+        <div id="startScreen" class="text-center">
+            <h1 id="gameTitle" class="text-4xl font-bold text-blue-800 mb-6">🌍 SDGsクイズ</h1>
+            <div class="bg-white rounded-lg shadow-lg p-8 mb-6">
+                <p class="text-lg text-gray-700 mb-4">具体的なアクションから該当するSDGs目標を選択してください</p>
+                <p class="text-md text-gray-600 mb-6">制限時間は60秒です。正解は複数ある場合があります。</p>
+                <button id="startButton" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-8 rounded-lg text-xl transition-colors">
+                    ゲームスタート
+                </button>
+            </div>
+        </div>
+
+        <!-- ゲーム画面 -->
+        <div id="gameScreen" class="hidden">
+            <!-- ヘッダー -->
+            <div class="flex justify-between items-center mb-6">
+                <h1 id="gameScreenTitle" class="text-2xl font-bold text-blue-800">🌍 SDGsクイズ</h1>
+                <div class="flex gap-4">
+                    <div class="bg-white rounded-lg px-4 py-2 shadow">
+                        <span id="timeLimitText" class="text-gray-600">残り時間: </span>
+                        <span id="timer" class="font-bold text-red-600">60</span>秒
+                    </div>
+                    <div class="bg-white rounded-lg px-4 py-2 shadow">
+                        <span class="text-gray-600">問題: </span>
+                        <span id="questionNumber" class="font-bold text-blue-600">1</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 問題表示 -->
+            <div class="bg-white rounded-lg shadow-lg p-6 mb-6">
+                <h2 class="text-xl font-bold text-gray-800 mb-4">このアクションはどのSDGs目標に関連しますか?</h2>
+                <p id="questionText" class="text-lg text-gray-700 bg-blue-50 p-4 rounded-lg"></p>
+                
+                <!-- フィードバック表示 -->
+                <div id="feedbackArea" class="mt-4 hidden">
+                    <div id="feedbackMessage" class="text-xl font-bold text-center py-3 px-4 rounded-lg"></div>
+                    <div id="pauseTimer" class="text-center mt-2 text-lg font-semibold text-gray-600 hidden">
+                        次の問題まで: <span id="pauseCount">2</span>秒
+                    </div>
+                </div>
+            </div>
+
+            <!-- SDGs目標ボタン -->
+            <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3" id="sdgButtons">
+                <!-- SDGsボタンがここに生成されます -->
+            </div>
+        </div>
+
+        <!-- 結果画面 -->
+        <div id="resultScreen" class="hidden">
+            <div class="text-center mb-6">
+                <h1 class="text-4xl font-bold text-blue-800 mb-6">🎉 ゲーム終了!</h1>
+                <div class="bg-white rounded-lg shadow-lg p-8 mb-6">
+                    <div class="text-6xl font-bold text-green-600 mb-4" id="finalScore">0</div>
+                    <p class="text-xl text-gray-700 mb-6">問正解!</p>
+                    <button id="restartButton" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-8 rounded-lg text-xl transition-colors">
+                        もう一度プレイ
+                    </button>
+                </div>
+            </div>
+
+            <!-- 解答確認 -->
+            <div>
+                <h2 class="text-2xl font-bold text-blue-800 mb-4">📋 解答確認</h2>
+                <div id="answersContent" class="space-y-4">
+                    <!-- 解答内容がここに生成されます -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ========================================
+        // 音声機能（音量バランス調整版）
+        // ========================================
+        const AudioManager = {
+            audioContext: null,
+            volume: 0.5,
+            bgmOscillators: [],
+            bgmGainNode: null,
+            isBgmPlaying: false,
+            
+            init() {
+                this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            },
+            
+            setVolume(value) {
+                this.volume = Math.max(0, Math.min(1, value));
+                if (this.bgmGainNode && this.isBgmPlaying) {
+                    // BGMは基準音量の0.1倍
+                    this.bgmGainNode.gain.setValueAtTime(0.1 * this.volume, this.audioContext.currentTime);
+                }
+            },
+            
+            // BGM: スピード感のあるループ音楽（音量抑え目）
+            startBGM() {
+                if (!this.audioContext) this.init();
+                if (this.isBgmPlaying) return;
+                
+                const context = this.audioContext;
+                this.bgmGainNode = context.createGain();
+                this.bgmGainNode.connect(context.destination);
+                // BGMは基準音量の0.1倍（効果音は0.6倍なので、効果音の1/6の音量）
+                this.bgmGainNode.gain.setValueAtTime(0.1 * this.volume, context.currentTime);
+                
+                // スピード感のあるメロディパターン
+                const melody = [
+                    { freq: 523.25, duration: 0.15 }, // C5
+                    { freq: 587.33, duration: 0.15 }, // D5
+                    { freq: 659.25, duration: 0.15 }, // E5
+                    { freq: 783.99, duration: 0.15 }, // G5
+                    { freq: 659.25, duration: 0.15 }, // E5
+                    { freq: 587.33, duration: 0.15 }, // D5
+                    { freq: 523.25, duration: 0.3 },  // C5
+                    { freq: 587.33, duration: 0.15 }, // D5
+                    { freq: 659.25, duration: 0.15 }, // E5
+                    { freq: 698.46, duration: 0.15 }, // F5
+                    { freq: 783.99, duration: 0.15 }, // G5
+                    { freq: 880.00, duration: 0.3 },  // A5
+                ];
+                
+                const bassline = [
+                    { freq: 130.81, duration: 0.45 }, // C3
+                    { freq: 146.83, duration: 0.45 }, // D3
+                    { freq: 164.81, duration: 0.45 }, // E3
+                    { freq: 196.00, duration: 0.45 }, // G3
+                ];
+                
+                this.isBgmPlaying = true;
+                
+                const playMelodyLoop = () => {
+                    if (!this.isBgmPlaying) return;
+                    
+                    let time = 0;
+                    melody.forEach(note => {
+                        const osc = context.createOscillator();
+                        osc.type = 'square';
+                        osc.frequency.value = note.freq;
+                        osc.connect(this.bgmGainNode);
+                        
+                        const startTime = context.currentTime + time;
+                        osc.start(startTime);
+                        osc.stop(startTime + note.duration);
+                        
+                        time += note.duration;
+                    });
+                    
+                    setTimeout(playMelodyLoop, time * 1000);
+                };
+                
+                const playBassLoop = () => {
+                    if (!this.isBgmPlaying) return;
+                    
+                    let time = 0;
+                    bassline.forEach(note => {
+                        const osc = context.createOscillator();
+                        osc.type = 'sine';
+                        osc.frequency.value = note.freq;
+                        const bassGain = context.createGain();
+                        bassGain.gain.value = 0.3;
+                        osc.connect(bassGain);
+                        bassGain.connect(this.bgmGainNode);
+                        
+                        const startTime = context.currentTime + time;
+                        osc.start(startTime);
+                        osc.stop(startTime + note.duration);
+                        
+                        time += note.duration;
+                    });
+                    
+                    setTimeout(playBassLoop, time * 1000);
+                };
+                
+                playMelodyLoop();
+                playBassLoop();
+            },
+            
+            stopBGM() {
+                this.isBgmPlaying = false;
+                if (this.bgmGainNode) {
+                    this.bgmGainNode.gain.exponentialRampToValueAtTime(
+                        0.01, 
+                        this.audioContext.currentTime + 0.5
+                    );
+                }
+            },
+            
+            // 正解音（BGMの6倍の音量 = 0.6倍）
+            playCorrect() {
+                if (!this.audioContext) this.init();
+                const context = this.audioContext;
+                const oscillator = context.createOscillator();
+                const gainNode = context.createGain();
+                
+                oscillator.connect(gainNode);
+                gainNode.connect(context.destination);
+                
+                oscillator.frequency.value = 523.25; // C5
+                oscillator.type = 'sine';
+                
+                // BGMの6倍の音量
+                gainNode.gain.setValueAtTime(0.6 * this.volume, context.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, context.currentTime + 0.5);
+                
+                oscillator.start(context.currentTime);
+                oscillator.stop(context.currentTime + 0.5);
+                
+                // 和音追加
+                const oscillator2 = context.createOscillator();
+                const gainNode2 = context.createGain();
+                oscillator2.connect(gainNode2);
+                gainNode2.connect(context.destination);
+                oscillator2.frequency.value = 659.25; // E5
+                oscillator2.type = 'sine';
+                gainNode2.gain.setValueAtTime(0.6 * this.volume, context.currentTime + 0.1);
+                gainNode2.gain.exponentialRampToValueAtTime(0.01, context.currentTime + 0.5);
+                oscillator2.start(context.currentTime + 0.1);
+                oscillator2.stop(context.currentTime + 0.5);
+            },
+            
+            // 不正解音（BGMの4倍の音量 = 0.4倍）
+            playWrong() {
+                if (!this.audioContext) this.init();
+                const context = this.audioContext;
+                const oscillator = context.createOscillator();
+                const gainNode = context.createGain();
+                
+                oscillator.connect(gainNode);
+                gainNode.connect(context.destination);
+                
+                oscillator.frequency.value = 200;
+                oscillator.type = 'sawtooth';
+                
+                // BGMの4倍の音量
+                gainNode.gain.setValueAtTime(0.4 * this.volume, context.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, context.currentTime + 0.4);
+                
+                oscillator.start(context.currentTime);
+                oscillator.stop(context.currentTime + 0.4);
+            },
+            
+            playStart() {
+                if (!this.audioContext) this.init();
+                const context = this.audioContext;
+                const oscillator = context.createOscillator();
+                const gainNode = context.createGain();
+                
+                oscillator.connect(gainNode);
+                gainNode.connect(context.destination);
+                
+                oscillator.type = 'square';
+                oscillator.frequency.setValueAtTime(440, context.currentTime);
+                oscillator.frequency.exponentialRampToValueAtTime(880, context.currentTime + 0.3);
+                
+                gainNode.gain.setValueAtTime(0.4 * this.volume, context.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, context.currentTime + 0.3);
+                
+                oscillator.start(context.currentTime);
+                oscillator.stop(context.currentTime + 0.3);
+            },
+            
+            playEnd() {
+                if (!this.audioContext) this.init();
+                const context = this.audioContext;
+                
+                // 3つの音を順番に鳴らす
+                [523.25, 659.25, 783.99].forEach((freq, index) => {
+                    const oscillator = context.createOscillator();
+                    const gainNode = context.createGain();
+                    
+                    oscillator.connect(gainNode);
+                    gainNode.connect(context.destination);
+                    
+                    oscillator.frequency.value = freq;
+                    oscillator.type = 'sine';
+                    
+                    const startTime = context.currentTime + (index * 0.15);
+                    gainNode.gain.setValueAtTime(0.4 * this.volume, startTime);
+                    gainNode.gain.exponentialRampToValueAtTime(0.01, startTime + 0.4);
+                    
+                    oscillator.start(startTime);
+                    oscillator.stop(startTime + 0.4);
+                });
+            },
+            
+            playClick() {
+                if (!this.audioContext) this.init();
+                const context = this.audioContext;
+                const oscillator = context.createOscillator();
+                const gainNode = context.createGain();
+                
+                oscillator.connect(gainNode);
+                gainNode.connect(context.destination);
+                
+                oscillator.frequency.value = 800;
+                oscillator.type = 'sine';
+                
+                gainNode.gain.setValueAtTime(0.2 * this.volume, context.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, context.currentTime + 0.1);
+                
+                oscillator.start(context.currentTime);
+                oscillator.stop(context.currentTime + 0.1);
+            }
+        };
+
+        // ========================================
+        // ゲームデータ
+        // ========================================
+        const sdgGoals = [
+            { id: 1, title: "貧困をなくそう", color: "#e5243b" },
+            { id: 2, title: "飢餓をゼロに", color: "#dda63a" },
+            { id: 3, title: "すべての人に健康と福祉を", color: "#4c9f38" },
+            { id: 4, title: "質の高い教育をみんなに", color: "#c5192d" },
+            { id: 5, title: "ジェンダー平等を実現しよう", color: "#ff3a21" },
+            { id: 6, title: "安全な水とトイレを世界中に", color: "#26bde2" },
+            { id: 7, title: "エネルギーをみんなに そしてクリーンに", color: "#fcc30b" },
+            { id: 8, title: "働きがいも経済成長も", color: "#a21942" },
+            { id: 9, title: "産業と技術革新の基盤をつくろう", color: "#fd6925" },
+            { id: 10, title: "人や国の不平等をなくそう", color: "#dd1367" },
+            { id: 11, title: "住み続けられるまちづくりを", color: "#fd9d24" },
+            { id: 12, title: "つくる責任 つかう責任", color: "#bf8b2e" },
+            { id: 13, title: "気候変動に具体的な対策を", color: "#3f7e44" },
+            { id: 14, title: "海の豊かさを守ろう", color: "#0a97d9" },
+            { id: 15, title: "陸の豊かさも守ろう", color: "#56c02b" },
+            { id: 16, title: "平和と公正をすべての人に", color: "#00689d" },
+            { id: 17, title: "パートナーシップで目標を達成しよう", color: "#19486a" }
+        ];
+
+        const quizQuestions = [
+            // 元の問題
+            { question: "地域の清掃活動に参加する", correctAnswers: [11, 14, 15] },
+            { question: "フェアトレード商品を購入する", correctAnswers: [1, 8, 12] },
+            { question: "食べ物を残さず食べる", correctAnswers: [2, 12, 13] },
+            { question: "節電を心がける", correctAnswers: [7, 13] },
+            { question: "マイバッグを使用する", correctAnswers: [12, 13, 14, 15] },
+            { question: "募金活動に参加する", correctAnswers: [1, 3, 4, 17] },
+            { question: "リサイクルを実践する", correctAnswers: [12, 13, 14, 15] },
+            { question: "公共交通機関を利用する", correctAnswers: [11, 13] },
+            { question: "地産地消を心がける", correctAnswers: [2, 8, 11, 12, 13] },
+            { question: "ボランティア活動に参加する", correctAnswers: [1, 3, 4, 10, 16, 17] },
+            { question: "水を大切に使う", correctAnswers: [6, 13, 14] },
+            { question: "差別をしない・させない", correctAnswers: [5, 10, 16] },
+            { question: "本や知識を人と共有する", correctAnswers: [4, 17] },
+            { question: "地元の農産物を購入する", correctAnswers: [2, 8, 11, 12, 15] },
+            { question: "プラスチック製品の使用を減らす", correctAnswers: [12, 13, 14, 15] },
+            
+            // 新規問題：1-20（学校生活・基本）
+            { question: "使わないときに電気を消します。", correctAnswers: [7] },
+            { question: "水を出しっぱなしにしません。", correctAnswers: [6] },
+            { question: "給食を残さず食べます。", correctAnswers: [12] },
+            { question: "教室のゴミを拾います。", correctAnswers: [15] },
+            { question: "あいさつをします。", correctAnswers: [16] },
+            { question: "友だちの話をしっかり聞きます。", correctAnswers: [16] },
+            { question: "男女関係なく同じ権利で活動します。", correctAnswers: [5] },
+            { question: "手洗いをして病気を防ぎます。", correctAnswers: [3] },
+            { question: "風邪のときは無理せず休みます。", correctAnswers: [3] },
+            { question: "学校の本を大切に使います。", correctAnswers: [4] },
+            { question: "イスをていねいに運びます。", correctAnswers: [12] },
+            { question: "靴をそろえます。", correctAnswers: [12] },
+            { question: "学校をきれいに掃除します。", correctAnswers: [11, 12] },
+            { question: "ゆずりあって遊具を使います。", correctAnswers: [16] },
+            { question: "うがい・手洗いを習慣にします。", correctAnswers: [3] },
+            { question: "熱中症にならないように水分補給します。", correctAnswers: [3] },
+            { question: "みんなで地域行事に参加します。", correctAnswers: [11] },
+            { question: "学校で困っている人に声をかけます。", correctAnswers: [16] },
+            { question: "お年寄りに席をゆずります。", correctAnswers: [10, 16] },
+            { question: "地域の人とのあいさつを大切にします。", correctAnswers: [11, 16] },
+            
+            // 新規問題：21-40（環境・エコ）
+            { question: "紙をリサイクルします。", correctAnswers: [12] },
+            { question: "ペットボトルを分別します。", correctAnswers: [12] },
+            { question: "プラスチックごみを減らします。", correctAnswers: [12, 14] },
+            { question: "公園のゴミを拾います。", correctAnswers: [15, 14] },
+            { question: "山や川を汚しません。", correctAnswers: [14, 15] },
+            { question: "使い捨てストローを使わないようにします。", correctAnswers: [12, 14] },
+            { question: "木を植えます。", correctAnswers: [13, 15] },
+            { question: "森を守る運動に参加します。", correctAnswers: [15] },
+            { question: "家庭菜園で野菜を育てます。", correctAnswers: [2, 12, 15] },
+            { question: "地元産の食べ物を食べます。", correctAnswers: [12, 13] },
+            { question: "節電を心がけます。", correctAnswers: [7, 13] },
+            { question: "公園の生き物を大切にします。", correctAnswers: [15] },
+            { question: "海にごみを捨てません。", correctAnswers: [14] },
+            { question: "魚をとりすぎないようにします。", correctAnswers: [14] },
+            { question: "生きもの図鑑を使って自然を調べます。", correctAnswers: [15, 4] },
+            { question: "虫をむやみにころしません。", correctAnswers: [15] },
+            { question: "エアコンの使いすぎに気をつけます。", correctAnswers: [7, 13] },
+            { question: "近所に出かけるときは歩きます。", correctAnswers: [13] },
+            { question: "自転車で通学してCO₂を減らします。", correctAnswers: [7, 11, 13] },
+            { question: "マイバッグを持ち歩きます。", correctAnswers: [12] },
+            
+            // 新規問題：41-60（世界・平等・協力）
+            { question: "世界中の子どもが学校へ行けるように応援します。", correctAnswers: [4] },
+            { question: "国のちがいを認めて仲良くします。", correctAnswers: [10, 16] },
+            { question: "外国から来た友だちも仲間に入れます。", correctAnswers: [10, 16] },
+            { question: "障がいのある人も使いやすい教室にします。", correctAnswers: [10, 11] },
+            { question: "地震のときに助けあう練習をします。", correctAnswers: [11, 16] },
+            { question: "みんなの意見を聞く会をします。", correctAnswers: [16] },
+            { question: "相手の気持ちを考えてことばを選びます。", correctAnswers: [16] },
+            { question: "けんかになりそうになったら話し合います。", correctAnswers: [16] },
+            { question: "ボランティア活動に参加します。", correctAnswers: [17, 11, 16] },
+            { question: "いじめをしません。", correctAnswers: [16] },
+            { question: "仕事をがんばる大人を応援します。", correctAnswers: [8] },
+            { question: "世界の人が平和にくらせるように祈ります。", correctAnswers: [16] },
+            { question: "みんなで集会のルールを決めます。", correctAnswers: [16] },
+            { question: "国どうしで協力するニュースを見る。", correctAnswers: [17] },
+            { question: "「ありがとう」を伝える。", correctAnswers: [16] },
+            { question: "労働者の安全をまもる活動に関心を持つ。", correctAnswers: [8, 3] },
+            { question: "不公平なことに気づいたら声を上げる。", correctAnswers: [10, 16] },
+            { question: "子どもも大人も意見を言える場所を大切にする。", correctAnswers: [16] },
+            { question: "新しい道具を作る企業を応援する。", correctAnswers: [9] },
+            { question: "人々が活動するための建物や橋を整備する。", correctAnswers: [9] },
+            
+            // 新規問題：61-80（科学・テクノロジー・社会）
+            { question: "ソーラーパネルを使います。", correctAnswers: [7, 13] },
+            { question: "電気自動車を使います。", correctAnswers: [7, 13] },
+            { question: "災害に強い家を建てます。", correctAnswers: [9, 11, 13] },
+            { question: "地震について学びます。", correctAnswers: [4, 11] },
+            { question: "台風への備えをします。", correctAnswers: [11, 13] },
+            { question: "医療のための研究を応援します。", correctAnswers: [3, 9] },
+            { question: "食べ物を作る農業技術を工夫します。", correctAnswers: [2, 9, 12] },
+            { question: "水をきれいにする技術に注目します。", correctAnswers: [6, 9] },
+            { question: "自然エネルギーを調べます。", correctAnswers: [4, 7] },
+            { question: "工場から出る煙を減らす工夫を考えます。", correctAnswers: [9, 13] },
+            { question: "魚を養殖する方法を考えます。", correctAnswers: [14, 9] },
+            { question: "森林を守る新しい計画をつくります。", correctAnswers: [15, 17] },
+            { question: "地図を見て地域を調べます。", correctAnswers: [4, 11] },
+            { question: "リサイクル工場の仕組みを学びます。", correctAnswers: [4, 12, 9] },
+            { question: "地球温暖化のニュースを見る。", correctAnswers: [13] },
+            { question: "海のプラスチック問題を調べる。", correctAnswers: [14, 12] },
+            { question: "公共交通を利用する。", correctAnswers: [11, 13] },
+            { question: "オンライン授業で学ぶ。", correctAnswers: [4, 9, 10] },
+            { question: "世界中とインターネットでつながる。", correctAnswers: [9, 10] },
+            { question: "AIロボットで作業を助ける。", correctAnswers: [8, 9] },
+            
+            // 新規問題：81-100（応用・総合）
+            { question: "世界の食糧不足をなくす活動を知る。", correctAnswers: [2, 17] },
+            { question: "すべての人に医療を届ける活動を応援する。", correctAnswers: [3, 10] },
+            { question: "子どもの労働をなくす取り組みに関心を持つ。", correctAnswers: [8, 10, 16] },
+            { question: "貧困について学ぶ。", correctAnswers: [1] },
+            { question: "募金活動に参加する。", correctAnswers: [1, 2, 3, 17] },
+            { question: "障がいのある人のスポーツを応援する。", correctAnswers: [3, 10] },
+            { question: "水の大切さを伝えるポスターを作る。", correctAnswers: [6, 12] },
+            { question: "街の安全を守るために見回りをする。", correctAnswers: [11, 16] },
+            { question: "災害ボランティアに参加する。", correctAnswers: [11, 16, 17] },
+            { question: "気候変動のためにできることを考える。", correctAnswers: [13] },
+            { question: "森と海はつながっていることを学ぶ。", correctAnswers: [14, 15] },
+            { question: "子ども食堂に協力する。", correctAnswers: [1, 2, 10] },
+            { question: "フェアトレード商品を選ぶ。", correctAnswers: [8, 10, 12] },
+            { question: "再生可能エネルギーの発電を応援する。", correctAnswers: [7, 13] },
+            { question: "世界で協力して感染症に立ち向かう。", correctAnswers: [3, 17] },
+            { question: "地元の自然を知るフィールドワーク。", correctAnswers: [15, 11] },
+            { question: "産業を発展させ仕事をつくる。", correctAnswers: [8, 9] },
+            { question: "子育てしやすい社会を考える。", correctAnswers: [3, 5, 10, 11] },
+            { question: "世界中の問題をニュースで知る。", correctAnswers: [4, 16, 17] },
+            { question: "国や人をこえて協力して世界を良くする。", correctAnswers: [17] }
+        ];
+
+        // ========================================
+        // ゲーム状態
+        // ========================================
+        let gameState = {
+            currentQuestion: 0,
+            score: 0,
+            timeLeft: 60,
+            gameActive: false,
+            userAnswers: [],
+            timer: null
+        };
+
+        // ========================================
+        // UI要素
+        // ========================================
+        const startScreen = document.getElementById('startScreen');
+        const gameScreen = document.getElementById('gameScreen');
+        const resultScreen = document.getElementById('resultScreen');
+
+        // ========================================
+        // ゲーム機能
+        // ========================================
+        function createSDGButtons() {
+            const container = document.getElementById('sdgButtons');
+            container.innerHTML = '';
+            
+            sdgGoals.forEach(goal => {
+                const button = document.createElement('button');
+                button.className = 'sdg-button p-3 rounded-lg text-white font-bold text-sm transition-all hover:shadow-lg';
+                button.style.backgroundColor = goal.color;
+                button.textContent = `${goal.id}. ${goal.title}`;
+                button.onclick = () => selectAnswer(goal.id);
+                container.appendChild(button);
+            });
+        }
+
+        function displayQuestion() {
+            if (gameState.currentQuestion >= quizQuestions.length) {
+                gameState.currentQuestion = 0;
+            }
+            
+            const question = quizQuestions[gameState.currentQuestion];
+            document.getElementById('questionText').textContent = question.question;
+            document.getElementById('questionNumber').textContent = gameState.currentQuestion + 1;
+            
+            resetButtonStates();
+        }
+
+        function resetButtonStates() {
+            const buttons = document.querySelectorAll('.sdg-button');
+            buttons.forEach(button => {
+                button.classList.remove('correct-answer', 'wrong-answer');
+                button.disabled = false;
+                const goalId = parseInt(button.textContent.split('.')[0]);
+                const goal = sdgGoals.find(g => g.id === goalId);
+                button.style.backgroundColor = goal.color;
+            });
+        }
+
+        function selectAnswer(selectedId) {
+            if (!gameState.gameActive) return;
+            
+            AudioManager.playClick();
+            
+            const question = quizQuestions[gameState.currentQuestion];
+            const isCorrect = question.correctAnswers.includes(selectedId);
+            
+            gameState.userAnswers.push({
+                question: question.question,
+                userAnswer: selectedId,
+                correctAnswers: question.correctAnswers,
+                isCorrect: isCorrect
+            });
+            
+            const buttons = document.querySelectorAll('.sdg-button');
+            buttons.forEach(button => {
+                button.disabled = true;
+                const goalId = parseInt(button.textContent.split('.')[0]);
+                
+                if (question.correctAnswers.includes(goalId)) {
+                    button.classList.add('correct-answer');
+                } else if (goalId === selectedId && !isCorrect) {
+                    button.classList.add('wrong-answer');
+                }
+            });
+            
+            const feedbackArea = document.getElementById('feedbackArea');
+            const feedbackMessage = document.getElementById('feedbackMessage');
+            const pauseTimer = document.getElementById('pauseTimer');
+            
+            feedbackArea.classList.remove('hidden');
+            
+            if (isCorrect) {
+                AudioManager.playCorrect();
+                gameState.score++;
+                feedbackMessage.textContent = '🎉 正解!';
+                feedbackMessage.className = 'text-xl font-bold text-center py-3 px-4 rounded-lg bg-green-100 text-green-800';
+                pauseTimer.classList.add('hidden');
+                
+                setTimeout(() => {
+                    nextQuestion();
+                }, 800);
+            } else {
+                AudioManager.playWrong();
+                feedbackMessage.textContent = '❌ 不正解';
+                feedbackMessage.className = 'text-xl font-bold text-center py-3 px-4 rounded-lg bg-red-100 text-red-800';
+                pauseTimer.classList.remove('hidden');
+                
+                let countdown = 2;
+                document.getElementById('pauseCount').textContent = countdown;
+                
+                const countdownInterval = setInterval(() => {
+                    countdown--;
+                    document.getElementById('pauseCount').textContent = countdown;
+                    
+                    if (countdown <= 0) {
+                        clearInterval(countdownInterval);
+                        nextQuestion();
+                    }
+                }, 1000);
+            }
+        }
+
+        function nextQuestion() {
+            if (!gameState.gameActive) return;
+            
+            document.getElementById('feedbackArea').classList.add('hidden');
+            
+            gameState.currentQuestion++;
+            displayQuestion();
+        }
+
+        function startTimer() {
+            gameState.timer = setInterval(() => {
+                gameState.timeLeft--;
+                document.getElementById('timer').textContent = gameState.timeLeft;
+                
+                if (gameState.timeLeft <= 0) {
+                    endGame();
+                }
+            }, 1000);
+        }
+
+        function startGame() {
+            AudioManager.playStart();
+            AudioManager.startBGM(); // BGM開始
+            
+            gameState = {
+                currentQuestion: 0,
+                score: 0,
+                timeLeft: 60,
+                gameActive: true,
+                userAnswers: [],
+                timer: null
+            };
+            
+            startScreen.classList.add('hidden');
+            gameScreen.classList.remove('hidden');
+            resultScreen.classList.add('hidden');
+            
+            createSDGButtons();
+            displayQuestion();
+            startTimer();
+        }
+
+        function endGame() {
+            AudioManager.stopBGM(); // BGM停止
+            AudioManager.playEnd();
+            
+            gameState.gameActive = false;
+            if (gameState.timer) {
+                clearInterval(gameState.timer);
+            }
+            
+            gameScreen.classList.add('hidden');
+            resultScreen.classList.remove('hidden');
+            
+            document.getElementById('finalScore').textContent = gameState.score;
+            showAnswers();
+        }
+
+        function showAnswers() {
+            const container = document.getElementById('answersContent');
+            container.innerHTML = '';
+            
+            gameState.userAnswers.forEach((answer, index) => {
+                const answerDiv = document.createElement('div');
+                answerDiv.className = 'bg-white rounded-lg shadow p-4';
+                
+                const correctGoals = answer.correctAnswers.map(id => 
+                    sdgGoals.find(g => g.id === id).title
+                ).join(', ');
+                
+                const userGoal = sdgGoals.find(g => g.id === answer.userAnswer).title;
+                
+                answerDiv.innerHTML = `
+                    <div class="flex items-center mb-2">
+                        <span class="font-bold text-gray-700">問題 ${index + 1}:</span>
+                        <span class="ml-2 px-2 py-1 rounded text-sm ${answer.isCorrect ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}">
+                            ${answer.isCorrect ? '正解' : '不正解'}
+                        </span>
+                    </div>
+                    <p class="text-gray-700 mb-2">${answer.question}</p>
+                    <p class="text-sm text-gray-600 mb-1"><strong>あなたの回答:</strong> ${userGoal}</p>
+                    <p class="text-sm text-gray-600"><strong>正解:</strong> ${correctGoals}</p>
+                `;
+                
+                container.appendChild(answerDiv);
+            });
+        }
+
+        // ========================================
+        // イベントリスナー
+        // ========================================
+        document.getElementById('startButton').addEventListener('click', startGame);
+        document.getElementById('restartButton').addEventListener('click', startGame);
+
+        // 音量調整
+        const volumeSlider = document.getElementById('volumeSlider');
+        const volumeValue = document.getElementById('volumeValue');
+        
+        volumeSlider.addEventListener('input', (e) => {
+            const volume = e.target.value / 100;
+            AudioManager.setVolume(volume);
+            volumeValue.textContent = e.target.value + '%';
+        });
+
+        // ========================================
+        // 初期化
+        // ========================================
+        createSDGButtons();
+    </script>
+</body>
+</html>
